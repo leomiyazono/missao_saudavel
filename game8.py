@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Missão Alimentação Saudável - Streamlit Cloud + Google Sheets
+Missão Alimentação Saudável - Versão Streamlit + Google Sheets
 Autor: Leonardo Miyazono
 """
 
@@ -10,15 +10,15 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
+st.set_page_config(page_title="Missão Saudável", page_icon="🍎")
+
 # =========================
-# CONFIG GOOGLE SHEETS
+# GOOGLE SHEETS
 # =========================
 SCOPE = ["https://www.googleapis.com/auth/spreadsheets"]
 CREDS = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=SCOPE)
 GSHEET_CLIENT = gspread.authorize(CREDS)
-
-# COLE AQUI O ID DA SUA PLANILHA
-SHEET = GSHEET_CLIENT.open_by_key("13U2gYEMQEhK9rVO67fFgX3lgmOOBBsHbRANxwVcTAH4").worksheet("ranking")
+SHEET = GSHEET_CLIENT.open_by_key("COLE_AQUI_O_ID_DA_PLANILHA").worksheet("ranking")
 
 # =========================
 # PERGUNTAS
@@ -31,80 +31,52 @@ perguntas = [
 # =========================
 # SESSION STATE
 # =========================
-if "fase" not in st.session_state: st.session_state.fase = "login"
-if "indice" not in st.session_state: st.session_state.indice = 0
-if "pontuacao" not in st.session_state: st.session_state.pontuacao = 0
-if "inicio_pergunta" not in st.session_state: st.session_state.inicio_pergunta = time.time()
+if "indice" not in st.session_state:
+    st.session_state.indice = 0
+if "pontuacao" not in st.session_state:
+    st.session_state.pontuacao = 0
+if "inicio_pergunta" not in st.session_state:
+    st.session_state.inicio_pergunta = time.time()
+if "email" not in st.session_state:
+    st.session_state.email = ""
 
 # =========================
-# ESTILO
+# ESTILO INFANTIL
 # =========================
 st.markdown("""
 <style>
-.stApp { background: linear-gradient(135deg,#ffeaa7,#81ecec); }
+.stApp {
+    background: linear-gradient(135deg,#ffeaa7,#81ecec);
+}
 </style>
 """, unsafe_allow_html=True)
 st.markdown("<div style='font-size:70px'>🍎🥦🍌 🍓🍍🥕</div>", unsafe_allow_html=True)
 st.title("Missão Alimentação Saudável")
 
 # =========================
-# FUNÇÃO AUXILIAR
+# EMAIL
 # =========================
-def carregar_ranking():
-    dados = SHEET.get_all_records()
-    if dados:
-        return pd.DataFrame(dados)
-    else:
-        return pd.DataFrame(columns=["nome","email","senha","pontuacao","idade","consome_fruta"])
-
-# =========================
-# LOGIN / CADASTRO
-# =========================
-if st.session_state.fase == "login":
-    opcao = st.radio("Escolha:", ["Login", "Cadastro"])
-    nome = st.text_input("Nome")
-    email = st.text_input("Email").strip().lower()
-    senha = st.text_input("Senha", type="password").strip()
-
-    df_ranking = carregar_ranking()
-
-    if opcao == "Cadastro":
-        if st.button("Cadastrar 🚀"):
-            if email in df_ranking["email"].values:
-                st.error("Email já cadastrado!")
-            else:
-                novo = {"nome": nome, "email": email, "senha": senha, "pontuacao": 0, "idade": "", "consome_fruta": ""}
-                df_ranking = pd.concat([df_ranking, pd.DataFrame([novo])], ignore_index=True)
-                SHEET.update([df_ranking.columns.tolist()] + df_ranking.values.tolist())
-                st.success("Cadastro realizado!")
-
-    else:  # LOGIN
-        if st.button("Entrar 🎮"):
-            user = df_ranking[(df_ranking["email"]==email) & (df_ranking["senha"]==senha)]
-            if user.empty:
-                st.error("Email ou senha incorretos!")
-            else:
-                st.session_state.nome = user["nome"].values[0]
-                st.session_state.email = email
-                st.session_state.fase = "jogo"
-                st.session_state.indice = 0
-                st.session_state.pontuacao = 0
-                st.session_state.inicio_pergunta = time.time()
-                st.rerun()
+if st.session_state.email == "":
+    email = st.text_input("Digite seu email para jogar:").strip().lower()
+    if st.button("Começar 🎮") and email != "":
+        st.session_state.email = email
+        st.session_state.indice = 0
+        st.session_state.pontuacao = 0
+        st.session_state.inicio_pergunta = time.time()
+        st.experimental_rerun()
 
 # =========================
 # JOGO
 # =========================
-elif st.session_state.fase == "jogo":
-    if st.session_state.indice >= len(perguntas):
-        st.session_state.fase = "formulario"
-        st.rerun()
-
+elif st.session_state.indice < len(perguntas):
     pergunta = perguntas[st.session_state.indice]
-    st.subheader(f"Pergunta {st.session_state.indice+1}")
+    st.subheader(f"Pergunta {st.session_state.indice + 1}")
 
-    tempo_restante = max(0, 10 - (time.time() - st.session_state.inicio_pergunta))
-    st.progress(tempo_restante / 10)
+    tempo_limite = 10
+    tempo_passado = time.time() - st.session_state.inicio_pergunta
+    tempo_restante = max(0, tempo_limite - tempo_passado)
+
+    st.progress(tempo_restante / tempo_limite)
     st.warning(f"⏳ {int(tempo_restante)} segundos")
 
     if tempo_restante <= 0:
@@ -112,55 +84,77 @@ elif st.session_state.fase == "jogo":
         time.sleep(1)
         st.session_state.indice += 1
         st.session_state.inicio_pergunta = time.time()
-        st.rerun()
+        st.experimental_rerun()
 
     resposta = st.radio(pergunta["pergunta"], pergunta["opcoes"], key=f"radio_{st.session_state.indice}")
+
     if st.button("Responder"):
         if tempo_restante > 0 and resposta == pergunta["resposta"]:
-            st.session_state.pontuacao += int(tempo_restante)
-            st.success(f"Ganhou {int(tempo_restante)} pontos! 🎉")
+            pontos = int(tempo_restante)
+            st.session_state.pontuacao += pontos
+            st.success(f"Ganhou {pontos} pontos! 🎉")
         else:
             st.error("Errado 😢")
         time.sleep(1)
         st.session_state.indice += 1
         st.session_state.inicio_pergunta = time.time()
-        st.rerun()
+        st.experimental_rerun()
+
+    time.sleep(0.1)
+    st.experimental_rerun()
 
 # =========================
-# FORMULÁRIO
+# FORMULÁRIO FINAL + RANKING
 # =========================
-elif st.session_state.fase == "formulario":
-    df_ranking = carregar_ranking()
-    email_atual = st.session_state.email
-    usuario_existente = df_ranking[df_ranking["email"]==email_atual]
-
+else:
     st.success(f"Pontuação final: {st.session_state.pontuacao}")
+
+    df_ranking = pd.DataFrame(SHEET.get_all_records())
+    email_atual = st.session_state.email
+    pontuacao_atual = st.session_state.pontuacao
+
+    usuario_existente = df_ranking[df_ranking["email"] == email_atual]
+
     idade = st.selectbox("Idade:", ["10-20","21-30","31-40","Mais de 40"])
     consome_fruta = st.radio("Você consome frutas todos os dias?", ["Sim","Não"])
 
     if st.button("Finalizar 🏁"):
         if usuario_existente.empty:
-            novo = {"nome": st.session_state.nome, "email": email_atual, "senha": "",
-                    "pontuacao": st.session_state.pontuacao, "idade": idade, "consome_fruta": consome_fruta}
-            df_ranking = pd.concat([df_ranking, pd.DataFrame([novo])], ignore_index=True)
+            # Novo jogador
+            df_ranking = df_ranking.append({
+                "nome": email_atual.split("@")[0], 
+                "email": email_atual, 
+                "pontuacao": pontuacao_atual,
+                "idade": idade,
+                "consome_fruta": consome_fruta
+            }, ignore_index=True)
         else:
+            # Atualiza se a pontuação for maior
             pont_antiga = usuario_existente["pontuacao"].values[0]
-            if st.session_state.pontuacao > pont_antiga:
-                df_ranking.loc[df_ranking["email"]==email_atual,
-                               ["pontuacao","idade","consome_fruta"]] = [st.session_state.pontuacao,idade,consome_fruta]
+            if pontuacao_atual > pont_antiga:
+                idx = usuario_existente.index[0]
+                df_ranking.loc[idx, ["pontuacao","idade","consome_fruta"]] = [pontuacao_atual, idade, consome_fruta]
 
-        SHEET.update([df_ranking.columns.tolist()] + df_ranking.values.tolist())
-        st.session_state.fase = "final"
-        st.rerun()
+        # Atualiza planilha
+        SHEET.clear()
+        SHEET.update([df_ranking.columns.values.tolist()] + df_ranking.values.tolist())
+
+        st.success("Ranking atualizado! 🚀")
+        st.session_state.indice = 0
+        st.session_state.pontuacao = 0
+        st.experimental_rerun()
 
 # =========================
-# FINAL
+# RANKING VISUAL
 # =========================
-elif st.session_state.fase == "final":
-    st.markdown("<div style='font-size:100px'>🏆</div>", unsafe_allow_html=True)
-    st.success("Parabéns!")
-    df_ranking = carregar_ranking().sort_values(by="pontuacao", ascending=False)
+if st.session_state.indice == len(perguntas):
+    df_ranking = pd.DataFrame(SHEET.get_all_records())
+    df_ranking = df_ranking.sort_values(by="pontuacao", ascending=False)
+    st.header("🏅 Ranking dos Campeões")
+    for i, row in enumerate(df_ranking.head(5).itertuples(), start=1):
+        st.write(f"{i}º 🥇 {row.nome} - {row.pontuacao} pontos")
 
     st.header("🏅 Ranking dos Campeões")
     for i,row in enumerate(df_ranking.head(5).itertuples(), start=1):
+
         st.write(f"{i}º 🥇 {row.nome} - {row.pontuacao} pontos")
